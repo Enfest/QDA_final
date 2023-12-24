@@ -20,11 +20,19 @@
 #include <xtensor/xadapt.hpp>
 #include <xtensor/xarray.hpp>
 #include <xtensor/xio.hpp>
+#include <math.h>
 
 #include "./tensor_util.hpp"
 #include "util/util.hpp"
 
 namespace qsyn::tensor {
+
+struct ZYZ{
+    double phi;
+    double alpha;
+    double beta; // actual beta/2
+    double gamma;
+};
 
 template <typename DT>
 class Tensor {
@@ -112,6 +120,26 @@ public:
     void reshape(TensorShape const& shape);
     Tensor<DT> transpose(TensorAxisList const& perm) const;
     void adjoint();
+
+    // decomposition functions
+    
+    friend struct ZYZ;
+    friend struct TwoLevelMatrix;
+
+    template <typename U>
+    friend Tensor<U> sqrt_tensor(Tensor<U> const& t);
+    // template <typename U>
+    // int graycode(TwoLevelMatrix const& t, int qreq);
+    template <typename U>
+    friend ZYZ decompose_ZYZ(Tensor<U> const& t);
+    template <typename U>
+    friend int decompose_CU(Tensor<U> const& t, int ctrl, int targ);
+    template <typename U>
+    friend int decompose_CnU(Tensor<U> const& t, int diff_pos, int index, int ctrl_gates);
+    template <typename U>
+    friend Tensor<U> tensor_multiply(Tensor<U> const& t1, Tensor<U> const& t2);
+
+
 
 protected:
     friend struct fmt::formatter<Tensor>;
@@ -341,40 +369,184 @@ bool is_partition(Tensor<U> const& t, TensorAxisList const& axin, TensorAxisList
     return true;
 }
 
-// DECOMPOSITION FUNCTIONS
+//------------------------------
+// DECOMPOSITION FUNCTIONS:
+// 
+//------------------------------
+
+// Two Level Matrices
+
 
 // decomposition MAIN function
+// template <typename U>
+// Tensor<U> decompose(Tensor<U> const& t) {
+//     fmt::println("in decomposition main function");
+//     std::vector<std::vector<int>> index;
+//     std::vector<int> new_twolevel_index = {0, 7};
+//     index.emplace_back(new_twolevel_index);
+//     int qreq = int(log2(t.shape()[0]));
+//     qreq = 3;
+
+//     int diff_pos = graycode(t, index[0]);
+//     int ctrl_index = 0;
+//     for(int i=0; i<qreq; i++){
+//         if(i != diff_pos){
+//             ctrl_index += int(pow(2, i));
+//         }
+//     }
+    
+//     // sqrt_tensor()
+//     int get = decompose_CnU(t, diff_pos, ctrl_index, qreq-1);
+//     std::cout << get << std::endl;
+//     return t;
+// }
+
+struct TwoLevelMatrix
+{
+    Tensor<std::complex<double>> given;
+    size_t i, j; // i < j
+    TwoLevelMatrix(Tensor<std::complex<double>> U) : given(U) {}
+};
+
+// template <typename U>
+// Tensor<U> get_2level(Tensor<U> const& t) {
+//     fmt::println("in decompose to 2 level matrices function");
+//     return t;
+// }
+
+// template <typename U>
+// Tensor<U> get_2level_tensor(Tensor<U> const& t) {
+//     fmt::println("in decompose to 2 level matrices function");
+//     return t;
+// }
+
+// struct cx{
+//     int ctrl;
+//     int targ;
+// };
+
+// 2*2matrix sqrt
 template <typename U>
-Tensor<U> decompose(Tensor<U> const& t) {
-    fmt::println("in decomposition main function");
-    Tensor<U> tdot = tensor_multiply(t, t);
-    std::cout << tdot << std::endl;
-    return t;
+Tensor<U> sqrt_tensor(Tensor<U> const& t){
+    std::complex<double> a=t(0,0), b=t(0,1), c=t(1,0), d=t(1,1);
+    std::complex<double> tau = a+d, delta = a*d-b*c;
+    // std::cout << tau << " " << delta << std::endl;
+    std::complex s = std::sqrt(delta);
+    std::complex _t = std::sqrt(tau+s+s);
+    Tensor<U> v({{(a+s)/_t, b/_t}, {c/_t, (d+s)/_t}});
+    return v;
+}
+
+
+
+
+
+
+template <typename U>
+ZYZ decompose_ZYZ(Tensor<U> const& t){
+    bool bc = 0;
+    std::complex<double> a=t(0,0), b=t(0,1), c=t(1,0), d=t(1,1);
+    if(std::abs(b) < 1e-10){
+        bc = 1;
+    }
+    std::complex<double> minus_one(-1.0, 0.0);
+    std::complex<double> c_alpha = std::sqrt(minus_one*c*d/(a*b));
+    std::complex<double> c_gamma = std::sqrt(minus_one*b*d/(a*c));
+    if(bc){
+        c_alpha = std::sqrt(minus_one*d/(a));
+        c_gamma = std::sqrt(minus_one*d/(a));
+    }
+    std::complex<double> c_phi = std::sqrt(a*d-b*c);
+    std::complex<double> c_beta = d/(c_phi*(std::sqrt(c_alpha*c_gamma)));
+    struct ZYZ output;
+    // std::cout << c_phi << ", " << c_alpha << ", " << c_beta << ", " << c_gamma << std::endl;
+    output.phi = std::arg(c_phi);
+    output.alpha = std::arg(c_alpha);
+    output.gamma = std::arg(c_gamma);
+    if(bc){
+        output.beta = 0.0;
+    }
+    else{
+        output.beta = std::acos(c_beta.real());
+    }
+    
+
+    return output;
 }
 
 template <typename U>
-Tensor<U> get_2level(Tensor<U> const& t) {
-    fmt::println("in decompose to 2 level matrices function");
-    return tensordot(t1, t2, {1}, {0});
+int decompose_CU(Tensor<U> const& t, int ctrl, int targ){
+    // fmt::println("in decompose CU function");
+    // std::cout << "CU on ctrl: " << ctrl << " targ: " << targ << " sqrt_time: " << sqrt_time << " dag: " << dag << " other: " << t.shape()[0] << std::endl;
+    // fmt::println("matrix: {}", t);
+    struct ZYZ angles = decompose_ZYZ(t);
+    // fmt::println("angles: {}, {}, {}, {}", angles.phi, angles.alpha, angles.beta, angles.gamma);
+    if(std::abs(angles.phi) > 1e-10){
+        fmt::println("rz({}) q[{}];", angles.phi, ctrl);
+    }
+    if(std::abs(angles.alpha) > 1e-10){
+        fmt::println("rz({}) q[{}];", angles.alpha, targ);
+    }
+    if(std::abs(angles.beta) > 1e-10){
+        fmt::println("ry({}) q[{}];", angles.beta, targ);
+        fmt::println("cx q[{}], q[{}];", ctrl, targ);
+        fmt::println("ry({}) q[{}];", angles.beta*(-1.0), targ);
+        if(std::abs((angles.alpha+angles.gamma)/2) > 1e-10){
+            fmt::println("rz({}) q[{}];", ((angles.alpha+angles.gamma)/2)*(-1.0), targ);
+        }
+        fmt::println("cx q[{}], q[{}];", ctrl, targ);
+    }
+    else{
+        if(std::abs((angles.alpha+angles.beta)/2) > 1e-10){
+            fmt::println("cx q[{}], q[{}];", ctrl, targ);
+            fmt::println("rz({}) q[{}];", ((angles.alpha+angles.gamma)/2)*(-1.0), targ);
+            fmt::println("cx q[{}], q[{}];", ctrl, targ);
+        }
+    }
+    if(std::abs((angles.alpha-angles.gamma)/2) > 1e-10){    
+        fmt::println("rz({}) q[{}];", ((angles.alpha-angles.gamma)/2)*(-1.0), targ);
+    }
+    return 0;
 }
 
-template <typename U>
-Tensor<U> get_2level_tensor(Tensor<U> const& t) {
-    fmt::println("in decompose to 2 level matrices function");
-    return tensordot(t1, t2, {1}, {0});
-}
+
 
 template <typename U>
-Tensor<U> graycode(Tensor<U> const& t) {
-    fmt::println("in decompose to 2 level matrices function");
-
-    return tensordot(t1, t2, {1}, {0});
-}
-
-template <typename U>
-Tensor<U> decompose_CnU(Tensor<U> const& t) {
-    fmt::println("in decompose to decompose CnU function");
-    return tensordot(t1, t2, {1}, {0});
+int decompose_CnU(Tensor<U> const& t, int diff_pos, int index, int ctrl_gates) {
+    // fmt::println("in decompose to decompose CnU function ctrl_gates: {}", t);
+    int qreq = int(log2(t.shape()[0]));
+    qreq = 4;
+    int ctrl = diff_pos-1;
+    if(diff_pos == 0){
+        ctrl = 1;
+    }
+    if(ctrl_gates == 1){
+        decompose_CU(t, ctrl, diff_pos);
+    }
+    else{
+        int extract_qubit = -1;
+        for(int i=0; i < qreq; i++){
+            if(i == ctrl){
+                continue;
+            }
+            if((index >> i) & 1){
+                extract_qubit = i;
+                index = index - int(pow(2, i));
+                break;
+            }
+        }
+        Tensor<U> V=sqrt_tensor(t);
+        // std::cout << "extract qubit: " << extract_qubit << std::endl;
+        decompose_CU(V, extract_qubit, diff_pos);
+        std::cout << "ccx " << index << " targ: " << extract_qubit << std::endl;
+        V.adjoint();
+        decompose_CU(V, extract_qubit, diff_pos);
+        std::cout << "ccx " << index << " targ: " << extract_qubit << std::endl;
+        V.adjoint();
+        decompose_CnU(V, diff_pos, index, ctrl_gates-1);
+    }
+    // std::cout << "ctrl: " << ctrl << std::endl;
+    return 0;
 }
 
 template <typename U>
@@ -390,4 +562,3 @@ Tensor<U> tensor_multiply(Tensor<U> const& t1, Tensor<U> const& t2) {
 
 template <typename DT>
 struct fmt::formatter<qsyn::tensor::Tensor<DT>> : fmt::ostream_formatter {};
-

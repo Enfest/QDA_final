@@ -29,6 +29,7 @@ ArgType<size_t>::ConstraintType valid_tensor_id(TensorMgr const& tensor_mgr) {
     };
 }
 
+
 Command tensor_print_cmd(TensorMgr& tensor_mgr) {
     return {"print",
             [&](ArgumentParser& parser) {
@@ -61,15 +62,44 @@ Command tensor_decompose_cmd(TensorMgr& tensor_mgr) {
             },
             [&](ArgumentParser const& parser) {
                 if (parser.parsed("id")) {
-                    QTensor<double>* tensor = tensor_mgr.find_by_id(parser.get<size_t>("id")));
-                    decompose((*tensor));
+                    QTensor<double>* tensor = tensor_mgr.find_by_id(parser.get<size_t>("id"));
+                    decompose(*tensor);
                 } else {
                     QTensor<double>* tensor = tensor_mgr.get();
-                    decompose((*tensor));
+                    decompose(*tensor);
                 }
                 return CmdExecResult::done;
             }};
 }
+
+// Command tensor_check_cmd(TensorMgr& tensor_mgr) {
+//     return {"decompose",
+//             [&](ArgumentParser& parser) {
+//                 parser.description("Decompose the unitary matrix into multi two level matrix");
+
+//                 parser.add_argument<size_t>("id")
+//                     .constraint(valid_tensor_id(tensor_mgr))
+//                     .nargs(NArgsOption::optional)
+//                     .help("if specified, decompose the tensor with the ID");
+//             },
+//             [&](ArgumentParser const& parser) {
+//                 if (parser.parsed("id")) {
+//                     QTensor<double>* tensor = tensor_mgr.find_by_id(parser.get<size_t>("id"));
+//                     decompose(*tensor);
+//                 } else {
+//                     QTensor<double>* tensor = tensor_mgr.get();
+//                     QTensor<double> t;
+//                     t = {
+//                         {0.353553 + 0.i, 0. + 0.i, -0.612372 + 0.i, 0.707107 + 0.i},
+//                         {0. + -0.866025i, 0. + 0.i, 0. - 0.5i, 0. + 0.i},
+//                         {0. + 0.i, 0. + 1.i, 0. + 0.i, 0. + 0.i}, // test
+//                         {-0.353553 + 0.i, 0. + 0.i, 0.612372 + 0.i, 0.707107 + 0.i},
+//                     };
+//                     std::cout << "is equivalent: " << is_equivalent(tensor, *t, 1e-6);
+//                 }
+//                 return CmdExecResult::done;
+//             }};
+// }
 
 Command tensor_adjoint_cmd(TensorMgr& tensor_mgr) {
     return {"adjoint",
@@ -154,6 +184,7 @@ Command tensor_cmd(TensorMgr& tensor_mgr) {
     cmd.add_subcommand(tensor_adjoint_cmd(tensor_mgr));
     cmd.add_subcommand(tensor_equivalence_check_cmd(tensor_mgr));
     cmd.add_subcommand(tensor_decompose_cmd(tensor_mgr));
+    // cmd.add_subcommand(tensor_check_cmd(tensor_mgr));
 
     return cmd;
 }
@@ -167,4 +198,3 @@ bool add_tensor_cmds(dvlab::CommandLineInterface& cli, TensorMgr& tensor_mgr) {
 }
 
 }  // namespace qsyn::tensor
-
