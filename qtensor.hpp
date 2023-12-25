@@ -448,7 +448,7 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
     int get_diff = I^J;
     int diff_pos = 0;
     for(int i = 0; i < qreq; i++){
-        if((get_diff >> i) & 1){
+        if(((get_diff >> i) & 1) && ((J >> i) & 1)){
             diff_pos = i;
             break;
         }
@@ -456,7 +456,7 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
     // std::cout << "diff position: " << diff_pos << std::endl;
     bool x_given = 0;
     if(((I >> diff_pos) & 1) == 0){
-        cnot_list.emplace_back(fmt::format("x q[{}];\n", diff_pos));
+        cnot_list.emplace_back(fmt::format("x q[{}];\n", qreq-1-diff_pos));
         std::cout << cnot_list[cnot_length];
         cnot_length++;
         x_given = 1;
@@ -466,21 +466,21 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
             continue;
         }
         if(((I >> i) & 1) == 0){
-            cnot_list.emplace_back(fmt::format("cx q[{}], q[{}];\n", diff_pos, i));
+            cnot_list.emplace_back(fmt::format("cx q[{}], q[{}];\n", qreq-1-diff_pos, qreq-1-i));
             std::cout << cnot_list[cnot_length];
             cnot_length++;
             // std::cout << "cx on ctrl: " << diff_pos << " targ: " << i << std::endl;
         }
     }
     if(x_given){
-        cnot_list.emplace_back(fmt::format("x q[{}];\n", diff_pos));
+        cnot_list.emplace_back(fmt::format("x q[{}];\n", qreq-1-diff_pos));
         std::cout << cnot_list[cnot_length];
         cnot_length++;
         // std::cout << "x on " << diff_pos << std::endl;
         x_given = 0;
     }
     if(((J >> diff_pos) & 1) == 0){
-        cnot_list.emplace_back(fmt::format("x q[{}];\n", diff_pos));
+        cnot_list.emplace_back(fmt::format("x q[{}];\n", qreq-1-diff_pos));
         std::cout << cnot_list[cnot_length];
         cnot_length++;
         // std::cout << "x on " << diff_pos << std::endl;
@@ -491,14 +491,14 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
             continue;
         }
         if(((J >> i) & 1) == 0){
-            cnot_list.emplace_back(fmt::format("cx q[{}], q[{}];\n", diff_pos, i));
+            cnot_list.emplace_back(fmt::format("cx q[{}], q[{}];\n", qreq-1-diff_pos, qreq-1-i));
             std::cout << cnot_list[cnot_length];
             cnot_length++;
             // std::cout << "cx on ctrl: " << diff_pos << " targ: " << i << std::endl;
         }
     }
     if(x_given){
-        cnot_list.emplace_back(fmt::format("x q[{}];\n", diff_pos));
+        cnot_list.emplace_back(fmt::format("x q[{}];\n", qreq-1-diff_pos));
         std::cout << cnot_list[cnot_length];
         cnot_length++;
         // std::cout << "x on " << diff_pos << std::endl;
@@ -511,7 +511,7 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
             ctrl_index += int(pow(2, i));
         }
     }
-    decompose_CnU(t, diff_pos, ctrl_index, qreq-1);
+    decompose_CnU(t, diff_pos, ctrl_index, qreq-1, qreq-1);
 
     //do unpabbing
     for(int i = cnot_length-1; i >= 0; i--){
@@ -522,7 +522,7 @@ int graycode(Tensor<U> const& t, int I, int J, int qreq){
 
 
 template <typename U>
-auto get_2level(QTensor<U> &t)
+auto get_2level(QTensor<U> t)
 {
     std::vector<TwoLevelMatrix> two_level_chain;
     fmt::println("start decomposing...");
@@ -536,8 +536,14 @@ auto get_2level(QTensor<U> &t)
     //     {0. + 0.i, 0. + 1.i, 0. + 0.i, 0. + 0.i}, // test
     //     {-0.353553 + 0.i, 0. + 0.i, 0.612372 + 0.i, 0.707107 + 0.i},
     // };
-    // fmt::println("今天拆解的矩陣是:");
-    // fmt::println("{}", *t);
+    // t = {
+    //     {0.707107+ 0.i, -0.707107 + 0.i, 0.0 + 0.i, 0.0+ 0.i},
+    //     {0.707107 + 0.0i, 0.707107 + 0.i, 0. - 0.0i, 0. + 0.i},
+    //     {0. + 0.i, 0. + 0.i, 0.707107 + 0.i, -0.707107 + 0.i}, // test
+    //     {0.0 + 0.i, 0. + 0.i, 0.707107 + 0.i, 0.707107 + 0.i},
+    // };
+    fmt::println("今天拆解的矩陣是:");
+    fmt::println("{}", t);
 
     size_t s = t.shape()[0];
     fmt::println("shape : {} * {}", s, s);
@@ -552,24 +558,24 @@ auto get_2level(QTensor<U> &t)
     {
         for (size_t j = i + 1; j < s; j++)
         {
-            // if (std::abs((*t)(i, i).real() - 1) < 1e-6 && std::abs((*t)(i, i).imag()) < 1e-6) {  // maybe use e-6 approx.
-            //     if (std::abs((*t)(j, i).real()) < 1e-6 && std::abs((*t)(j, i).imag()) < 1e-6) {
-            //         fmt::println("skip cuz (1,0) {},{}", i, j);
-            //         continue;
-            //     }
-            // }
-            // if (std::abs((*t)(i, i).real()) < 1e-6 && std::abs((*t)(i, i).imag()) < 1e-6) {  // maybe use e-6 approx.
-            //     if (std::abs((*t)(j, i).real()) < 1e-6 && std::abs((*t)(j, i).imag()) < 1e-6) {
-            //         fmt::println("skip cuz (0,0) {},{}", i, j);
-            //         continue;
-            //     }
-            // }
-
-            if (std::abs(t(j, i).real()) < 1e-6 && std::abs(t(j, i).imag()) < 1e-6)
-            {
-                fmt::println("skip cuz U({},{}) = 0", j, i);
-                continue;
+            if (std::abs(t(i, i).real() - 1) < 1e-6 && std::abs(t(i, i).imag()) < 1e-6) {  // maybe use e-6 approx.
+                if (std::abs(t(j, i).real()) < 1e-6 && std::abs(t(j, i).imag()) < 1e-6) {
+                    fmt::println("skip cuz (1,0) {},{}", i, j);
+                    continue;
+                }
             }
+            if (std::abs(t(i, i).real()) < 1e-6 && std::abs(t(i, i).imag()) < 1e-6) {  // maybe use e-6 approx.
+                if (std::abs(t(j, i).real()) < 1e-6 && std::abs(t(j, i).imag()) < 1e-6) {
+                    fmt::println("skip cuz (0,0) {},{}", i, j);
+                    continue;
+                }
+            }
+
+            // if (std::abs(t(j, i).real()) < 1e-6 && std::abs(t(j, i).imag()) < 1e-6)
+            // {
+            //     fmt::println("skip cuz U({},{}) = 0", j, i);
+            //     continue;
+            // }
 
             fmt::println("拆! i = {}, j = {}", i, j);
             num++;
@@ -620,8 +626,8 @@ auto get_2level(QTensor<U> &t)
             // std::complex<double> b = (*t)(j, i);
 
             t = tensordot(XU, t, {1}, {0});
-            // fmt::println("目前結果:");
-            // fmt::println("{}", *t);
+            fmt::println("目前結果:");
+            fmt::println("{}", t);
 
             // U(ii/ij/ji/jj) adjust
             QTensor<double>
@@ -637,8 +643,8 @@ auto get_2level(QTensor<U> &t)
             m.j = j;
             two_level_chain.push_back(m);
 
-            // fmt::println("CU{}", num);
-            // fmt::println("{}", two_level_chain[num - 1].given);
+            fmt::println("CU{}", num);
+            fmt::println("{}", two_level_chain[num - 1].given);
 
             // check if *t is 2-level ,end
 
@@ -653,7 +659,7 @@ auto get_2level(QTensor<U> &t)
                 if (!is_two_level)
                     break;
 
-                for (size_t y = 1; y < x; y++)
+                for (size_t y = 0; y < x; y++)
                 {
                     if (std::abs(t(y, x).real()) > 1e-6 || std::abs(t(y, x).imag()) > 1e-6)
                     { // entry(j,i)!=0
@@ -672,10 +678,37 @@ auto get_2level(QTensor<U> &t)
                 }
             }
 
+            if(c_i == 1073741824 ||c_j == 1073741824)
+            {
+                size_t diag = 0;
+                for (size_t x = 0; x < s; x++)
+                {
+                    if (std::abs(t(x, x).real() - 1) > 1e-6 || std::abs(t(x, x).imag()) > 1e-6)
+                    { // entry(x,x)!=1
+                        diag++;
+
+                        if (diag == 1)
+                        {
+                            c_i = x;
+                        }
+                        else if(diag == 2){
+                            c_j = x;
+                            is_two_level = true;
+                        }
+                        else{
+                            is_two_level = false;
+                            break;
+                        }
+                    }
+                }
+            }
+
             for (size_t x = 0; x < s; x++)
             {
-                if ((c_i == 1073741824) || !is_two_level)
+                if (!is_two_level){
+                    is_two_level = false;
                     break;
+                }
                 if (std::abs(t(x, x).real() - 1) > 1e-6 || std::abs(t(x, x).imag()) > 1e-6)
                 { // entry(x,x)!=1
 
@@ -687,20 +720,21 @@ auto get_2level(QTensor<U> &t)
             }
             if (is_two_level == true)
             {
-                CU(0, 0) = std::conj(t(c_i, c_i));
-                CU(0, 1) = std::conj(t(c_j, c_i));
-                CU(1, 0) = std::conj(t(c_i, c_j));
-                CU(1, 1) = std::conj(t(c_j, c_j));
+                CU(0, 0) = t(c_i, c_i);
+                CU(0, 1) = t(c_i, c_j);
+                CU(1, 0) = t(c_j, c_i);
+                CU(1, 1) = t(c_j, c_j);
                 TwoLevelMatrix m(CU);
                 m.i = c_i;
                 m.j = c_j;
                 two_level_chain.push_back(m);
-                fmt::println("find *t has been 2 level matrix, put it in the chain");
-                // fmt::println("{}", CU);
-                // fmt::println("in the chain");
+                fmt::println("find t has been 2 level matrix, put it in the chain");
+                fmt::println("{}", CU);
+                fmt::println("in the chain");
 
                 return two_level_chain;
             }
+            fmt::println("finish checking");
         }
     }
     return two_level_chain;
@@ -719,31 +753,6 @@ void decompose(QTensor<U> &t){
     for(int i=0; i<end; i++){
         graycode(two_level_chain[i].given, two_level_chain[i].i, two_level_chain[i].j, qreq);
     }
-    // TwoLevelMatrix trying(trying.given);
-    // // trying.given = two_level_chain[0].given;
-    // trying.i = two_level_chain[0].i;
-    // trying.j = two_level_chain[0].j;
-    
-    // std::cout << "diff_pos: " << diff_pos << std::endl;
-    // fmt::println("matrix: {}", two_level_chain[0].given);
-    // std::vector<std::vector<int>> index;
-    // std::vector<int> new_twolevel_index = {0, 7};
-    // index.emplace_back(new_twolevel_index);
-    // int qreq = int(log2(t.shape()[0]));
-    // qreq = 3;
-
-    // int diff_pos = graycode(t, index[0]);
-    // int ctrl_index = 0;
-    // for(int i=0; i<qreq; i++){
-    //     if(i != diff_pos){
-    //         ctrl_index += int(pow(2, i));
-    //     }
-    // }
-    
-    // // sqrt_tensor()
-    // int get = decompose_CnU(t, diff_pos, ctrl_index, qreq-1);
-    // std::cout << get << std::endl;
-    // return t;
 }
 
 
